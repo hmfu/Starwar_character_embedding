@@ -7,7 +7,7 @@ import numpy as np
 
 class Evaluator(object):
 
-	def __init__(self, char_embed_dict, pca_file_name, tsne_file_name, print_pca_var_ratio, show_figures, list_wrong_chars, include_unseen_as_neutral):
+	def __init__(self, char_embed_dict, pca_file_name, tsne_file_name, print_pca_var_ratio, show_figures, list_wrong_chars, include_unseen_as_neutral, tsne_epochs, print_unseen_chars):
 		
 		self.char_embed_dict = char_embed_dict
 		self.pca_file_name = pca_file_name
@@ -15,28 +15,38 @@ class Evaluator(object):
 		self.print_pca_var_ratio = print_pca_var_ratio
 		self.show_figures = show_figures
 		self.include_unseen_as_neutral = include_unseen_as_neutral
+		self.tsne_epochs = tsne_epochs
+		self.print_unseen_chars = print_unseen_chars
 		
 		self.build_char_groups()
 		self.char_arr, self.embed_arr = self.build_data_arr()
 		self.ground_truth_arr = self.build_ground_truth_arr()
 		self.label_arr, self.centroids = self.k_means()
-		
-		self.plot_pca()
-		self.plot_tsne()
 
 		# Here we compute the accuracies of different label matches and select the better one.
 		acc_tuple1 = self.get_accuracy(label_for_imperial = 0)
 		acc_tuple2 = self.get_accuracy(label_for_imperial = 1)
 		final_acc_tuple = acc_tuple1 if acc_tuple1[0] > acc_tuple2[0] else acc_tuple2
 
+		print ('\nimperial color:\t', final_acc_tuple[4])
+		print ('rebel color:\t', self.the_other_color(final_acc_tuple[4]))
 		print ('\nAccuracy with neutral characters as correct: ', final_acc_tuple[0])
-		print ('\nAccuracy with neutral correcters excluded:   ', final_acc_tuple[1])
+		print ('Accuracy with neutral correcters excluded:   ', final_acc_tuple[1])
+
+		self.plot_pca()
+		self.plot_tsne()
 
 		if list_wrong_chars:
 			print ('\nimperial characters mispredicted to be rebel:')
 			print (final_acc_tuple[2])
 			print ('\nrebel characters mispredicted to be imperial:')
 			print (final_acc_tuple[3], '\n')
+
+	def the_other_color(self, color):
+
+		the_other_color = 'blue' if color == 'red' else 'red'
+
+		return the_other_color
 
 	def get_accuracy(self, label_for_imperial):
 
@@ -64,7 +74,10 @@ class Evaluator(object):
 				else:
 					missed_rebel_list += [self.char_arr[char_idx]]
 
-		return (correct + neutral) / char_num, correct / (char_num - neutral), missed_imperial_list, missed_rebel_list
+		imperial_color = 'blue' if label_for_imperial == 1 else 'red'
+
+		return (correct + neutral) / char_num, correct / (char_num - neutral), missed_imperial_list, missed_rebel_list, \
+				imperial_color
 
 	def build_char_groups(self):
 
@@ -97,8 +110,12 @@ class Evaluator(object):
 				ground_truth_list += [2]
 			elif self.include_unseen_as_neutral:
 				ground_truth_list += [2]
+				self.unseen_chars += [char]
 			else:
 				raise Exception('The character %s does not exist!' % char)
+
+		if self.print_unseen_chars:
+			print ('These are unseen characters in the character embedding dictionay:', self.unseen_chars)
 
 		return np.array(ground_truth_list)
 
@@ -106,8 +123,10 @@ class Evaluator(object):
 
 		if self.include_unseen_as_neutral:
 			char_arr = np.array(list(self.char_embed_dict.keys()))
+			self.unseen_chars = []
 		else:
 			char_arr = np.array([char for char in list(self.char_embed_dict.keys()) if char in self.legal_chars])
+			self.unseen_chars = [char for char in list(self.char_embed_dict.keys()) if char not in self.legal_chars]
 
 		embed_arr = np.array([self.char_embed_dict[key] for key in char_arr])
 
@@ -143,6 +162,9 @@ class Evaluator(object):
 
 			ax.scatter([x], [y], c = color, marker = marker, label = ['yes'])
 			ax.annotate(self.char_arr[char_idx], (x, y), size = 7)
+			ax.set_xlabel('first dimension')
+			ax.set_ylabel('second dimension')
+			ax.set_title('PCA outcome')
 
 		fig.savefig(self.pca_file_name)
 
@@ -151,7 +173,7 @@ class Evaluator(object):
 
 	def plot_tsne(self):
 		
-		tsne = TSNE(n_components = 2, verbose = 0, perplexity = 40, n_iter = 300)
+		tsne = TSNE(n_components = 2, verbose = 0, perplexity = 40, n_iter = self.tsne_epochs)
 		tsne_outcome = tsne.fit_transform(self.embed_arr)
 
 		marker_list = ['o', 'x', 'v'] # The last one is for neutral characters.
@@ -167,6 +189,9 @@ class Evaluator(object):
 
 			ax.scatter([x], [y], c = color, marker = marker, label = ['yes'])
 			ax.annotate(self.char_arr[char_idx], (x, y), size = 7)
+			ax.set_xlabel('first dimension')
+			ax.set_ylabel('second dimension')
+			ax.set_title('t-SNE outcome')
 
 		fig.savefig(self.tsne_file_name)
 
