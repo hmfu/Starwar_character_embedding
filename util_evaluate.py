@@ -1,13 +1,14 @@
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+from sklearn import svm
 import matplotlib.pyplot as plt
 import random
 import numpy as np
 
 class Evaluator(object):
 
-	def __init__(self, char_embed_dict, pca_file_name, tsne_file_name, print_pca_var_ratio, show_figures, list_wrong_chars, include_unseen_as_neutral, tsne_epochs, print_unseen_chars):
+	def __init__(self, char_embed_dict, pca_file_name, tsne_file_name, print_pca_var_ratio, show_figures, list_wrong_chars, include_unseen_as_neutral, tsne_epochs, print_unseen_chars, svm_c, svm_val_slice_num):
 		
 		self.char_embed_dict = char_embed_dict
 		self.pca_file_name = pca_file_name
@@ -17,6 +18,7 @@ class Evaluator(object):
 		self.include_unseen_as_neutral = include_unseen_as_neutral
 		self.tsne_epochs = tsne_epochs
 		self.print_unseen_chars = print_unseen_chars
+		self.svm_c = svm_c
 		
 		self.build_char_groups()
 		self.char_arr, self.embed_arr = self.build_data_arr()
@@ -35,12 +37,68 @@ class Evaluator(object):
 
 		self.plot_pca()
 		self.plot_tsne()
-
+		
 		if list_wrong_chars:
 			print ('\nimperial characters mispredicted to be rebel:')
 			print (final_acc_tuple[2])
 			print ('\nrebel characters mispredicted to be imperial:')
-			print (final_acc_tuple[3], '\n')
+			print (final_acc_tuple[3])
+
+		self.svm(val_slice_num = svm_val_slice_num)
+
+	def svm(self, val_slice_num):
+
+		svm_label_list = []
+		svm_embed_list = []
+		
+		for char_idx in range(len(self.char_arr)):
+			if self.ground_truth_arr[char_idx] != 2:
+				svm_label_list += [self.ground_truth_arr[char_idx].tolist()]
+				svm_embed_list += [self.embed_arr[char_idx].tolist()]
+
+		svm_char_num = len(svm_label_list)
+		svm_slice_size = svm_char_num // val_slice_num
+
+		if self.svm_c == None:
+			c_list = [1.0, 3.0, 9.0, 27.0, 81.0, 243.0]
+			correct_pred_list = [0] * len(c_list)
+		else:
+			correct_pred = 0
+
+		for slice_idx in range(val_slice_num):
+			is_last = slice_idx == val_slice_num - 1
+			start_idx = slice_idx * svm_slice_size
+			end_idx = (slice_idx + 1) * svm_slice_size if not is_last else svm_char_num
+
+			test_x = svm_embed_list[start_idx: end_idx]
+			test_y = svm_label_list[start_idx: end_idx]
+			train_x = svm_embed_list[0:start_idx] + svm_embed_list[end_idx:] if not is_last else svm_embed_list[0:start_idx]
+			train_y = svm_label_list[0:start_idx] + svm_label_list[end_idx:] if not is_last else svm_label_list[0:start_idx]
+
+			if self.svm_c == None:
+
+				for c_idx in range(len(c_list)):
+					svm_model = svm.SVC(C=c_list[c_idx], cache_size=200, class_weight=None, coef0=0.0, \
+						decision_function_shape='ovr', \
+						degree=3, gamma='auto', kernel='rbf', max_iter=-1, probability=False, random_state=None, \
+						shrinking=True, tol=0.001, verbose=False)
+					svm_model.fit(train_x, train_y)
+					correct_pred_list[c_idx] += sum(np.equal(np.array(svm_model.predict(test_x)), test_y))
+			
+			else:
+				svm_model = svm.SVC(C=self.svm_c, cache_size=200, class_weight=None, coef0=0.0, \
+						decision_function_shape='ovr', \
+						degree=3, gamma='auto', kernel='rbf', max_iter=-1, probability=False, random_state=None, \
+						shrinking=True, tol=0.001, verbose=False)
+				svm_model.fit(train_x, train_y)
+				correct_pred += sum(np.equal(np.array(svm_model.predict(test_x)), test_y))
+
+		if self.svm_c != None:
+			print ('\nAccuracy of SVM with c = %f:\t' % self.svm_c, correct_pred / svm_char_num)
+		else:
+			print ('\n')
+			for pair in zip(c_list, correct_pred_list):
+				print ('Accuracy of SVM with c = %f:\t' % pair[0], pair[1] / svm_char_num)
 
 	def the_other_color(self, color):
 
@@ -84,7 +142,7 @@ class Evaluator(object):
 		self.rebel = ('BASE VOICE', 'CONTROL OFFICER', 'MAN', 'PORKINS', 'REBEL OFFICER', 'RED ELEVEN',
              'RED TEN', 'RED SEVEN', 'RED NINE', 'RED LEADER', 'BIGGS', 'GOLD LEADER',
              'WEDGE', 'GOLD FIVE', 'REBEL', 'DODONNA', 'CHIEF', 'TECHNICIAN', 'WILLARD',
-             'GOLD TWO', 'MASSASSI INTERCOM VOICE', 'THREEPIO', 'HAN and LUKE', 'HAN/PILOT', 'HAN', 'LUKE', 'LEIA', 'THREEPIO', 'SECOND THREEPIO', 'YODA', 'REBEL FIGHTER', 'REBEL PILOT', 'REBEL CAPTAIN', 'BEN', 'Y-WING PILOT', 'ANAKIN')
+             'GOLD TWO', 'MASSASSI INTERCOM VOICE', 'THREEPIO', 'HAN and LUKE', 'HAN/PILOT', 'HAN', 'LUKE', 'LEIA', 'THREEPIO', 'SECOND THREEPIO', 'YODA', 'REBEL FIGHTER', 'REBEL PILOT', 'REBEL CAPTAIN', 'BEN', 'Y-WING PILOT', 'ANAKIN', 'LANDO')
 
 		self.imperial = ('CAPTAIN', 'CHIEF PILOT', 'TROOPER', 'OFFICER', 'DEATH STAR INTERCOM VOICE', 
                 'FIRST TROOPER', 'SECOND TROOPER', 'FIRST OFFICER', 'OFFICER CASS', 'TARKIN',
