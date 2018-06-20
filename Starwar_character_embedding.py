@@ -26,7 +26,7 @@ class DataFormater():
             with open(fileName) as inFile:
                 next(inFile)
                 for line in inFile:
-                    token = line.rstrip().split(' ')[1][1:-1]
+                    token = line.rstrip().split('"')[3]
                     seq += [token]
             self.seqList += [seq]
         
@@ -49,8 +49,23 @@ class DataFormater():
         nl = [[self.tokenDict[seq[ind]] for ind in range(len(seq)) if ind == 0 or seq[ind] != seq[ind-1]] for seq in self.seqList]
         self.seqList = nl
 
+    def svdEmbed(self, embedDim, fileName):
+        scoreMatrix = np.zeros(shape = (self.tokenNum, self.tokenNum))
+        
+        for tup in self.tupList:
+            scoreMatrix[tup[0], tup[1]] = self.pairScoreDict[tup]
+            scoreMatrix[tup[1], tup[0]] = self.pairScoreDict[tup]
+
+        u, s, _ = np.linalg.svd(scoreMatrix, full_matrices = False)
+        embed_table = np.matmul(u, np.diag(s))[:,: embedDim]
+
+        with open(fileName, 'wb') as f:
+            pickle.dump((embed_table, None, self.indToTokDict), f, protocol = pickle.HIGHEST_PROTOCOL)
+
+        print ('svd embedding saved as ', fileName)
+
     def buildData(self, windowSize, alpha, xMax):
-        pairScoreDict = {}
+        self.pairScoreDict = {}
 
         for seq in self.seqList:
             for ind in range(len(seq) - windowSize):
@@ -58,10 +73,10 @@ class DataFormater():
                 for offset in range(1, windowSize + 1):
                     code2 = seq[ind + offset]
                     tup = (min(code1, code2), max(code1, code2))
-                    pairScoreDict[tup] = pairScoreDict.get(tup, 0) + 1 / offset
+                    self.pairScoreDict[tup] = self.pairScoreDict.get(tup, 0) + 1 / offset
 
-        tupList = list(pairScoreDict.keys())
-        tupNum = len(tupList)
+        self.tupList = list(self.pairScoreDict.keys())
+        tupNum = len(self.tupList)
 
         self.code1Arr = np.empty(shape = (tupNum, 1))
         self.code2Arr = np.empty(shape = (tupNum, 1))
@@ -69,8 +84,8 @@ class DataFormater():
         self.labelArr = np.empty(shape = (tupNum, 1))
         
         for tupInd in range(tupNum):
-            tup = tupList[tupInd]
-            score = pairScoreDict[tup]
+            tup = self.tupList[tupInd]
+            score = self.pairScoreDict[tup]
             self.code1Arr[tupInd, 0] = tup[0]
             self.code2Arr[tupInd, 0] = tup[1]
             self.wtFuncArr[tupInd, 0] = np.minimum(score / xMax, 1.0)
@@ -82,7 +97,7 @@ class DataFormater():
         with open(fileName, 'w') as outFile:
             for ind in range(self.tokenNum):
                 outFile.write(str(self.indToTokDict[ind]) + '\n')
-        print ('meta data %d is saved.' % fileName)
+        print ('meta data %s is saved.' % fileName)
 
 class GloveModel():
     def __init__(self):
@@ -160,7 +175,7 @@ class Visualizer():
             saver_embed.save(sess, os.path.join(FileWriterDir, './embedding.ckpt'), 1)
 
         writer.close()
-        print ('graph for visualization saved to %d' % FileWriterDir)
+        print ('graph for visualization saved to %s' % FileWriterDir)
 
 if __name__ == '__main__':
     df = DataFormater()
@@ -170,12 +185,13 @@ if __name__ == '__main__':
     df.loadSeq([os.path.join('star-wars-movie-scripts/', fileName) for fileName in fileList])
     df.buildTokenDict()
     df.tokenToCode()
-    df.buildData(windowSize = 5, alpha = 0.75, xMax = 10)
+    df.buildData(windowSize = 10, alpha = 0.75, xMax = 50)
+    df.svdEmbed(embedDim = 10, fileName = 'svdTableTup.pkl')
     df.saveMetaData(fileName = 'metaData.csv')
 
     gm = GloveModel()
     gm.buildModel(embedDim = 10, tokenNum = df.tokenNum)
-    gm.trainModel(learningRate = 0.01, epochNum = 1000, evalEpochNum = 50, dataTup = df.dataTup)
+    gm.trainModel(learningRate = 0.01, epochNum = 500, evalEpochNum = 50, dataTup = df.dataTup)
     gm.saveEmbedding(fileName = 'tableTup.pkl', tokDict = df.indToTokDict)
 
     v = Visualizer()
