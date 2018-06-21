@@ -64,16 +64,26 @@ class DataFormater():
 
         print ('svd embedding saved as ', fileName)
 
-    def buildData(self, windowSize, alpha, xMax):
+    def buildData(self, windowSize, alpha, xMax, useFreqNorm):
         self.pairScoreDict = {}
+        countDict = {}
 
         for seq in self.seqList:
             for ind in range(len(seq) - windowSize):
                 code1 = seq[ind]
+                countDict[code1] = countDict.get(code1, 0) + 1
                 for offset in range(1, windowSize + 1):
                     code2 = seq[ind + offset]
+
+                    if ind == len(seq) - windowSize - 1:
+                        countDict[code2] = countDict.get(code2, 0) + 1
+                    
                     tup = (min(code1, code2), max(code1, code2))
                     self.pairScoreDict[tup] = self.pairScoreDict.get(tup, 0) + 1 / offset
+
+        if useFreqNorm:
+            for key in self.pairScoreDict.keys():
+                self.pairScoreDict[key] = self.pairScoreDict[key] / countDict[key[0]] / countDict[key[1]]
 
         self.tupList = list(self.pairScoreDict.keys())
         tupNum = len(self.tupList)
@@ -185,7 +195,7 @@ if __name__ == '__main__':
     df.loadSeq([os.path.join('star-wars-movie-scripts/', fileName) for fileName in fileList])
     df.buildTokenDict()
     df.tokenToCode()
-    df.buildData(windowSize = 10, alpha = 0.75, xMax = 50)
+    df.buildData(windowSize = 10, alpha = 0.75, xMax = 50, useFreqNorm = False)
     df.svdEmbed(embedDim = 10, fileName = 'svdTableTup.pkl')
     df.saveMetaData(fileName = 'metaData.csv')
 
